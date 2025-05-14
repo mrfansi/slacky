@@ -7,15 +7,23 @@ import { supabase } from "@/lib/supabase";
 import { getMessages, MessageWithSender } from "@/actions/chat-actions";
 import { useSession } from "next-auth/react";
 import { format } from "date-fns";
-import { Users, UserIcon, Settings } from "lucide-react";
+import { Users, UserIcon, Settings, Smile } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GroupDetailsDialog } from "./group-details-dialog";
 import { OnlineIndicator } from "./online-indicator";
+import { MessageReactions } from "./message-reactions";
+import { EmojiPicker } from "./emoji-picker";
+import { addReaction, removeReaction } from "@/services/reaction-service";
+
+// Type for message with reactions
+type MessageWithReactions = MessageWithSender & {
+    reactions?: any[];
+};
 
 export function MessageView() {
     const { data: session } = useSession();
     const { activeConversationId } = useChatStore();
-    const [messages, setMessages] = useState<MessageWithSender[]>([]);
+    const [messages, setMessages] = useState<MessageWithReactions[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [activeConversation, setActiveConversation] = useState<any>(null);
     const [showGroupDetails, setShowGroupDetails] = useState(false);
@@ -59,12 +67,12 @@ export function MessageView() {
         loadMessagesAndConversation();
     }, [activeConversationId]);
 
-    // Subscribe to real-time messages
+    // Subscribe to real-time messages and reactions
     useEffect(() => {
         if (!activeConversationId) return;
 
         // Subscribe to the chat_messages channel for the active conversation
-        const channel = supabase
+        const messagesChannel = supabase
             .channel('chat_messages')
             .on('broadcast', { event: 'new_message' }, (payload) => {
                 // Only process messages for the active conversation
@@ -78,21 +86,81 @@ export function MessageView() {
                         if (messageExists) {
                             return prevMessages;
                         }
-                        return [...prevMessages, newMessage];
+                        return [...prevMessages, { ...newMessage, reactions: [] }];
                     });
                 }
             })
             .subscribe();
+            
+        // Subscribe to the message_reactions channel for reaction updates
+        const reactionsChannel = supabase
+            .channel('message_reactions')
+            .on('broadcast', { event: 'new_reaction' }, (payload) => {
+                const { messageId, reaction } = payload.payload;
+                
+                // Update the message with the new reaction
+                setMessages((prevMessages) => {
+                    return prevMessages.map(msg => {
+                        if (msg.id === messageId) {
+                            // Add the reaction to the message
+                            const reactions = msg.reactions || [];
+                            return {
+                                ...msg,
+                                reactions: [...reactions, reaction]
+                            };
+                        }
+                        return msg;
+                    });
+                });
+            })
+            .on('broadcast', { event: 'remove_reaction' }, (payload) => {
+                const { messageId, userId, emoji } = payload.payload;
+                
+                // Update the message by removing the reaction
+                setMessages((prevMessages) => {
+                    return prevMessages.map(msg => {
+                        if (msg.id === messageId) {
+                            // Remove the reaction from the message
+                            const reactions = (msg.reactions || []).filter(
+                                (r: any) => !(r.userId === userId && r.emoji === emoji)
+                            );
+                            return {
+                                ...msg,
+                                reactions
+                            };
+                        }
+                        return msg;
+                    });
+                });
+            })
+            .subscribe();
 
-        // Cleanup subscription on unmount or when conversation changes
+        // Cleanup subscriptions on unmount or when conversation changes
         return () => {
             supabase.channel('chat_messages').unsubscribe();
+            supabase.channel('message_reactions').unsubscribe();
         };
     }, [activeConversationId]);
 
     // Format the timestamp for display
     const formatMessageTime = (timestamp: Date) => {
         return format(new Date(timestamp), 'h:mm a');
+    };
+    
+    // Handle adding a reaction to a message
+    const handleAddReaction = async (messageId: string, emoji: string) => {
+        const result = await addReaction(messageId, emoji);
+        if (!result.success) {
+            console.error('Failed to add reaction:', result.error);
+        }
+    };
+    
+    // Handle removing a reaction from a message
+    const handleRemoveReaction = async (messageId: string, emoji: string) => {
+        const result = await removeReaction(messageId, emoji);
+        if (!result.success) {
+            console.error('Failed to remove reaction:', result.error);
+        }
     };
 
     // Prepare participants data for the group details dialog
@@ -191,7 +259,7 @@ export function MessageView() {
                             return (
                                 <div
                                     key={message.id}
-                                    className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+                                    className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}
                                 >
                                     <div
                                         className={`max-w-[70%] px-4 py-2 rounded-lg ${isMine
@@ -210,6 +278,15 @@ export function MessageView() {
                                             {formatMessageTime(message.createdAt)}
                                         </div>
                                     </div>
+                                    
+                                    {/* Message Reactions */}
+                                    <MessageReactions
+                                        messageId={message.id}
+                                        reactions={message.reactions || []}
+                                        onReactionSelect={handleAddReaction}
+                                        onReactionRemove={handleRemoveReaction}
+                                        className={`${isMine ? 'mr-2' : 'ml-2'}`}
+                                    />
                                 </div>
                             );
                         })}

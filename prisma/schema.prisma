@@ -28,6 +28,7 @@ model User {
   messages       Message[]
   conversations  ConversationParticipant[]
   seenMessages   Message[] @relation("MessageSeenBy")
+  reactions      Reaction[] // User's reactions to messages
 }
 
 // NextAuth.js required models
@@ -109,4 +110,21 @@ model Message {
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   seenBy         User[]       @relation("MessageSeenBy")
+  reactions      Reaction[]   // One-to-many relation with reactions
+}
+
+// Reaction model for message reactions
+model Reaction {
+  id         String   @id @default(cuid())
+  emoji      String   // The emoji used for the reaction (e.g., "👍")
+  createdAt  DateTime @default(now())
+  
+  // Relations
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId  String
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  
+  // Ensure a user can only react once with the same emoji to a message
+  @@unique([userId, messageId, emoji])
 }
