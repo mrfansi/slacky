@@ -23,6 +23,11 @@
 # misc
 .DS_Store
 *.pem
+/.clinerules
+/.cursor
+/.roo
+/docs
+/tasks
 
 # debug
 npm-debug.log*
