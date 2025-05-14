@@ -1,0 +1,72 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String    @unique
+  hashedPassword String?
+  image          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  // Relations
+  messages       Message[]
+  conversations  ConversationParticipant[]
+  seenMessages   Message[] @relation("MessageSeenBy")
+}
+
+// Conversation model (for both private and group chats)
+model Conversation {
+  id            String    @id @default(cuid())
+  name          String?   // For group chats
+  isGroup       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  messages      Message[]
+  participants  ConversationParticipant[]
+}
+
+// ConversationParticipant model (Join table for many-to-many between User and Conversation)
+model ConversationParticipant {
+  id                String       @id @default(cuid())
+  userId            String
+  conversationId    String
+  hasUnreadMessages Boolean      @default(false)
+  createdAt         DateTime     @default(now())
+  
+  // Relations
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  // Unique constraint
+  @@unique([userId, conversationId])
+}
+
+// Message model
+model Message {
+  id             String       @id @default(cuid())
+  body           String?
+  image          String?      // For image messages
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  
+  // Relations
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  seenBy         User[]       @relation("MessageSeenBy")
+}
