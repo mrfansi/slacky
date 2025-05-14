@@ -8,13 +8,12 @@ import { useChatStore } from "@/stores/use-chat-store";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { getOrCreatePrivateConversation, getUsers, getUserConversations } from "@/actions/chat-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserIcon, PlusIcon, Users, LogOut, Settings } from "lucide-react";
+import { UserIcon, PlusIcon, Users } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { LoaderCircle } from "lucide-react";
 import { CreateGroupDialog } from "@/components/chat/create-group-dialog";
 import { OnlineIndicator } from "@/components/chat/online-indicator";
 import { supabase } from "@/lib/supabase";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 // Types for our components
 interface ConversationProps {
@@ -417,29 +416,8 @@ export function Sidebar() {
                 </ScrollArea>
             </CardContent>
             
-            {/* Settings and Logout */}
-            <div className="mt-auto p-4 border-t space-y-2">
-                <div className="flex items-center justify-between mb-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center gap-2"
-                        onClick={() => window.location.href = '/settings'}
-                    >
-                        <Settings className="h-4 w-4" />
-                        <span>Settings</span>
-                    </Button>
-                    <ThemeToggle />
-                </div>
-                <Button 
-                    variant="destructive" 
-                    className="w-full flex items-center justify-center gap-2"
-                    onClick={() => window.location.href = '/logout'}
-                >
-                    <LogOut className="h-4 w-4" />
-                    <span>Sign Out</span>
-                </Button>
-            </div>
+            {/* Bottom padding */}
+            <div className="mt-auto p-2"></div>
         </div>
     );
 };

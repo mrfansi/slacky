@@ -200,14 +200,9 @@ export async function getMessages(conversationId: string) {
         const messages = await prisma.message.findMany({
             where: {
                 conversationId,
-                // Use type assertion to handle fields that TypeScript doesn't recognize
-                ...({
-                    // Handle both false and null values for isThreadReply
-                    // This ensures we only get main messages, not thread replies
-                    isThreadReply: {
-                        in: [false, null]
-                    }
-                } as any),
+                // Use a type assertion to handle TypeScript errors
+                // while still using the correct field in the database
+                ...({ isThreadReply: false } as any),
             },
             include: {
                 sender: {
