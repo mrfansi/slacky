@@ -11,6 +11,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { UserIcon, PlusIcon, Users } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { LoaderCircle } from "lucide-react";
+import { CreateGroupDialog } from "@/components/chat/create-group-dialog";
+import { OnlineIndicator } from "@/components/chat/online-indicator";
+import { supabase } from "@/lib/supabase";
 
 // Types for our components
 interface ConversationProps {
@@ -39,15 +42,22 @@ const Conversation = ({ id, name, image, isActive = false, isGroup = false, onCl
             onClick={() => onClick(id)}
         >
             <div className="flex items-center w-full">
-                <Avatar className="h-6 w-6 mr-2">
-                    <AvatarImage src={image || undefined} />
-                    <AvatarFallback>
-                        {isGroup ?
-                            <Users className="h-4 w-4" /> :
-                            (name?.charAt(0) || <UserIcon className="h-4 w-4" />)
-                        }
-                    </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                    <Avatar className="h-6 w-6 mr-2">
+                        <AvatarImage src={image || undefined} />
+                        <AvatarFallback>
+                            {isGroup ?
+                                <Users className="h-4 w-4" /> :
+                                (name?.charAt(0) || <UserIcon className="h-4 w-4" />)
+                            }
+                        </AvatarFallback>
+                    </Avatar>
+                    {!isGroup && (
+                        <div className="absolute -bottom-0.5 -right-0.5">
+                            <OnlineIndicator userId={id} className="h-2 w-2 border border-background" />
+                        </div>
+                    )}
+                </div>
                 <span className="truncate">
                     {isGroup ? `# ${name || 'Group'}` : (name || 'Unknown User')}
                 </span>
@@ -65,12 +75,17 @@ const UserItem = ({ id, name, email, image, onClick }: UserItemProps) => {
             onClick={() => onClick(id)}
         >
             <div className="flex items-center w-full">
-                <Avatar className="h-6 w-6 mr-2">
-                    <AvatarImage src={image || undefined} />
-                    <AvatarFallback>
-                        {name?.charAt(0) || 'U'}
-                    </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                    <Avatar className="h-6 w-6 mr-2">
+                        <AvatarImage src={image || undefined} />
+                        <AvatarFallback>
+                            {name?.charAt(0) || 'U'}
+                        </AvatarFallback>
+                    </Avatar>
+                    <div className="absolute -bottom-0.5 -right-0.5">
+                        <OnlineIndicator userId={id} className="h-2 w-2 border border-background" />
+                    </div>
+                </div>
                 <div className="flex flex-col items-start">
                     <span className="text-sm font-medium">{name || 'Anonymous'}</span>
                     <span className="text-xs text-muted-foreground truncate">{email}</span>
@@ -89,6 +104,7 @@ export function Sidebar() {
     const [loading, setLoading] = useState(true);
     const [userDialogOpen, setUserDialogOpen] = useState(false);
     const [selectingUser, setSelectingUser] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     // Load conversations and users
     useEffect(() => {
@@ -107,7 +123,20 @@ export function Sidebar() {
         };
 
         loadConversations();
-    }, []);
+        
+        // Subscribe to real-time updates for new group conversations
+        const channel = supabase
+            .channel('group_updates')
+            .on('broadcast', { event: 'new_group' }, (payload: any) => {
+                // When a new group is created, refresh the conversations list
+                setRefreshTrigger(prev => prev + 1);
+            })
+            .subscribe();
+            
+        return () => {
+            supabase.channel('group_updates').unsubscribe();
+        };
+    }, [refreshTrigger]);
 
     // Load users when the dialog is opened
     const handleOpenUsersDialog = async () => {
@@ -127,21 +156,15 @@ export function Sidebar() {
     // Handle selecting a user to start a private conversation
     const handleSelectUser = async (userId: string) => {
         setSelectingUser(true);
-
         try {
             const result = await getOrCreatePrivateConversation(userId);
-            if (result.success) {
-                // Set this conversation as active
-                setActiveConversationId(result.conversationId);
-
-                // Refresh the conversations list
-                const conversationsResult = await getUserConversations();
-                if (conversationsResult.success) {
-                    setConversations(conversationsResult.conversations || []);
-                }
-
-                // Close the dialog
+            if (result.success && result.conversationId) {
                 setUserDialogOpen(false);
+                setActiveConversationId(result.conversationId);
+                // Refresh conversations list
+                setRefreshTrigger(prev => prev + 1);
+            } else {
+                console.error("Failed to create conversation:", result.error);
             }
         } catch (error) {
             console.error("Error creating conversation:", error);
@@ -150,9 +173,15 @@ export function Sidebar() {
         }
     };
 
+    // Handle group creation success
+    const handleGroupCreated = (conversationId: string) => {
+        setActiveConversationId(conversationId);
+        setRefreshTrigger(prev => prev + 1);
+    };
+
     // Split conversations into channels (group) and direct messages
-    const channels = conversations.filter(conv => conv.isGroup);
     const directMessages = conversations.filter(conv => !conv.isGroup);
+    const groupChats = conversations.filter(conv => conv.isGroup);
 
     if (!isSidebarOpen) {
         return (
@@ -183,7 +212,7 @@ export function Sidebar() {
                 {/* Compact conversations list */}
                 <div className="flex flex-col space-y-2">
                     {/* Group conversations */}
-                    {channels.map((conversation) => (
+                    {groupChats.map((conversation) => (
                         <Button
                             key={conversation.id}
                             variant="ghost"
@@ -270,30 +299,66 @@ export function Sidebar() {
     }
 
     return (
-        <div className="h-full w-64 border-r bg-background flex flex-col">
-            <CardHeader className="px-4 py-3 flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-xl font-bold">Slacky</CardTitle>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleSidebar}
-                    aria-label="Close sidebar"
-                >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="24"
-                        height="24"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-5 w-5"
-                    >
-                        <path d="M15 18l-6-6 6-6" />
-                    </svg>
-                </Button>
+        <div
+            className={`border-r h-full transition-all duration-300 ${
+                isSidebarOpen ? "w-64" : "w-0"
+            }`}
+        >
+            <CardHeader className="p-4">
+                <div className="flex justify-between items-center">
+                    <CardTitle className="text-xl">Chats</CardTitle>
+                    <div className="flex space-x-1">
+                        {/* Direct Message Dialog */}
+                        <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+                            <DialogTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={handleOpenUsersDialog}
+                                    title="New Direct Message"
+                                >
+                                    <PlusIcon className="h-4 w-4" />
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>New Conversation</DialogTitle>
+                                </DialogHeader>
+                                <div className="py-4">
+                                    {selectingUser ? (
+                                        <div className="flex items-center justify-center py-4">
+                                            <LoaderCircle className="h-5 w-5 animate-spin" />
+                                            <span className="ml-2">Creating conversation...</span>
+                                        </div>
+                                    ) : (
+                                        <div className="max-h-[300px] overflow-y-auto">
+                                            {users.length === 0 ? (
+                                                <div className="text-center py-4">
+                                                    <p className="text-sm text-muted-foreground">No users found</p>
+                                                </div>
+                                            ) : (
+                                                users.map((user) => (
+                                                    <UserItem
+                                                        key={user.id}
+                                                        id={user.id}
+                                                        name={user.name}
+                                                        email={user.email}
+                                                        image={user.image}
+                                                        onClick={handleSelectUser}
+                                                    />
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                        
+                        {/* Group Chat Dialog */}
+                        <CreateGroupDialog onGroupCreated={handleGroupCreated} />
+                    </div>
+                </div>
             </CardHeader>
 
             <CardContent className="px-2 py-0 flex-grow overflow-auto">
@@ -305,7 +370,7 @@ export function Sidebar() {
                         </div>
                     </div>
                     <div className="space-y-1 px-2 pb-4">
-                        {channels.map((conversation) => (
+                        {groupChats.map((conversation) => (
                             <Conversation
                                 key={conversation.id}
                                 id={conversation.id}
@@ -323,52 +388,6 @@ export function Sidebar() {
                     <div className="px-2 py-1 mt-2">
                         <div className="flex items-center justify-between">
                             <h3 className="text-sm font-medium">Direct Messages</h3>
-
-                            {/* New Direct Message button */}
-                            <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
-                                <DialogTrigger asChild>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={handleOpenUsersDialog}
-                                    >
-                                        <PlusIcon className="h-4 w-4" />
-                                    </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                    <DialogHeader>
-                                        <DialogTitle>New Conversation</DialogTitle>
-                                    </DialogHeader>
-                                    <div className="py-4">
-                                        {selectingUser ? (
-                                            <div className="flex items-center justify-center py-4">
-                                                <LoaderCircle className="h-5 w-5 animate-spin" />
-                                                <span className="ml-2">Creating conversation...</span>
-                                            </div>
-                                        ) : (
-                                            <div className="max-h-[300px] overflow-y-auto">
-                                                {users.length === 0 ? (
-                                                    <div className="text-center py-4">
-                                                        <p className="text-sm text-muted-foreground">No users found</p>
-                                                    </div>
-                                                ) : (
-                                                    users.map((user) => (
-                                                        <UserItem
-                                                            key={user.id}
-                                                            id={user.id}
-                                                            name={user.name}
-                                                            email={user.email}
-                                                            image={user.image}
-                                                            onClick={handleSelectUser}
-                                                        />
-                                                    ))
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </DialogContent>
-                            </Dialog>
                         </div>
                     </div>
                     <div className="space-y-1 px-2">
