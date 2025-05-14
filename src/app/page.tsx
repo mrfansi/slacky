@@ -1,4 +1,13 @@
 import Image from 'next/image';
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter
+} from "@/components/ui/card";
 
 export default function Home() {
   return (
@@ -23,7 +32,11 @@ export default function Home() {
           <li className="tracking-[-.01em]">Save and see your changes instantly.</li>
         </ol>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
+        {/* ShadCN UI components test */}
+        <div className="flex gap-4 items-center flex-col sm:flex-row mb-8">
+          <Button variant="default">ShadCN Button</Button>
+          <Button variant="secondary">Secondary Button</Button>
+          <Button variant="outline">Outline Button</Button>
           <a
             className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
             href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
@@ -47,6 +60,21 @@ export default function Home() {
           >
             Read our docs
           </a>
+        </div>
+        {/* ShadCN Card component test */}
+        <div className="w-full max-w-md">
+          <Card>
+            <CardHeader>
+              <CardTitle>ShadCN Card</CardTitle>
+              <CardDescription>This is a ShadCN UI Card component</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p>ShadCN UI has been successfully integrated into the project.</p>
+            </CardContent>
+            <CardFooter>
+              <Button size="sm">Card Action</Button>
+            </CardFooter>
+          </Card>
         </div>
       </main>
       <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
