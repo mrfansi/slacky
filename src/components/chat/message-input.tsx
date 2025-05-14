@@ -3,15 +3,33 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useChatStore } from "@/stores/use-chat-store";
+import { sendMessage } from "@/actions/chat-actions";
 
 export function MessageInput() {
     const [message, setMessage] = useState("");
+    const [isSending, setIsSending] = useState(false);
+    const { activeConversationId } = useChatStore();
 
-    const handleSendMessage = () => {
-        if (message.trim()) {
-            console.log("Sending message:", message);
-            // In a future task, this would actually send the message
-            setMessage("");
+    const handleSendMessage = async () => {
+        if (!message.trim() || !activeConversationId) return;
+
+        try {
+            setIsSending(true);
+            const result = await sendMessage(message.trim(), activeConversationId);
+
+            if (result.success) {
+                setMessage("");
+                // Success handling - would be handled by real-time updates in the future
+            } else {
+                console.error("Failed to send message:", result.error);
+                console.error(result.error || "Failed to send message");
+            }
+        } catch (error) {
+            console.error("Error sending message:", error);
+            console.error("An unexpected error occurred");
+        } finally {
+            setIsSending(false);
         }
     };
 
@@ -32,7 +50,10 @@ export function MessageInput() {
                     placeholder="Type a message..."
                     className="flex-1"
                 />
-                <Button onClick={handleSendMessage} disabled={!message.trim()}>
+                <Button
+                    onClick={handleSendMessage}
+                    disabled={!message.trim() || !activeConversationId || isSending}
+                >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="18"
