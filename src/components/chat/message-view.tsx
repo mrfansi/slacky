@@ -13,11 +13,16 @@ import { GroupDetailsDialog } from "./group-details-dialog";
 import { OnlineIndicator } from "./online-indicator";
 import { MessageReactions } from "./message-reactions";
 import { EmojiPicker } from "./emoji-picker";
+import { ThreadIndicator } from "./thread-indicator";
+import { ThreadDialog } from "./thread-dialog";
 import { addReaction, removeReaction } from "@/services/reaction-service";
 
-// Type for message with reactions
+// Type for message with reactions and thread replies
 type MessageWithReactions = MessageWithSender & {
     reactions?: any[];
+    replies?: MessageWithSender[];
+    replyCount?: number;
+    isThreadReply?: boolean;
 };
 
 export function MessageView() {
@@ -27,6 +32,8 @@ export function MessageView() {
     const [isLoading, setIsLoading] = useState(false);
     const [activeConversation, setActiveConversation] = useState<any>(null);
     const [showGroupDetails, setShowGroupDetails] = useState(false);
+    const [threadDialogOpen, setThreadDialogOpen] = useState(false);
+    const [activeThreadMessage, setActiveThreadMessage] = useState<MessageWithReactions | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Scroll to bottom when messages change
@@ -46,7 +53,9 @@ export function MessageView() {
                 // Load messages
                 const messagesResult = await getMessages(activeConversationId);
                 if (messagesResult.success && messagesResult.messages) {
-                    setMessages(messagesResult.messages);
+                    // The messages already have the correct structure from the server action
+                    // Just cast them to the expected type to satisfy TypeScript
+                    setMessages(messagesResult.messages as unknown as MessageWithReactions[]);
                 } else {
                     console.error("Failed to load messages:", messagesResult.error);
                 }
@@ -78,6 +87,9 @@ export function MessageView() {
                 // Only process messages for the active conversation
                 if (payload.payload.conversationId === activeConversationId) {
                     const newMessage = payload.payload.message;
+                    
+                    // Don't show thread replies in the main chat view
+                    if (newMessage.isThreadReply) return;
 
                     // Add the new message to the state
                     setMessages((prevMessages) => {
@@ -86,9 +98,27 @@ export function MessageView() {
                         if (messageExists) {
                             return prevMessages;
                         }
-                        return [...prevMessages, { ...newMessage, reactions: [] }];
+                        return [...prevMessages, { ...newMessage, reactions: [], replyCount: 0, isThreadReply: false }];
                     });
                 }
+            })
+            .subscribe();
+            
+        // Subscribe to the thread_updates channel for thread reply counts
+        const threadChannel = supabase
+            .channel('thread_updates')
+            .on('broadcast', { event: 'thread_update' }, (payload) => {
+                const { messageId, replyCount } = payload.payload;
+                
+                // Update the reply count for the message
+                setMessages((prevMessages) => {
+                    return prevMessages.map(msg => {
+                        if (msg.id === messageId) {
+                            return { ...msg, replyCount };
+                        }
+                        return msg;
+                    });
+                });
             })
             .subscribe();
             
@@ -137,8 +167,9 @@ export function MessageView() {
 
         // Cleanup subscriptions on unmount or when conversation changes
         return () => {
-            supabase.channel('chat_messages').unsubscribe();
-            supabase.channel('message_reactions').unsubscribe();
+            messagesChannel.unsubscribe();
+            reactionsChannel.unsubscribe();
+            threadChannel.unsubscribe();
         };
     }, [activeConversationId]);
 
@@ -161,6 +192,12 @@ export function MessageView() {
         if (!result.success) {
             console.error('Failed to remove reaction:', result.error);
         }
+    };
+    
+    // Open thread dialog for a message
+    const handleOpenThread = (message: MessageWithReactions) => {
+        setActiveThreadMessage(message);
+        setThreadDialogOpen(true);
     };
 
     // Prepare participants data for the group details dialog
@@ -279,14 +316,25 @@ export function MessageView() {
                                         </div>
                                     </div>
                                     
-                                    {/* Message Reactions */}
-                                    <MessageReactions
-                                        messageId={message.id}
-                                        reactions={message.reactions || []}
-                                        onReactionSelect={handleAddReaction}
-                                        onReactionRemove={handleRemoveReaction}
-                                        className={`${isMine ? 'mr-2' : 'ml-2'}`}
-                                    />
+                                    <div className="flex flex-col">
+                                        {/* Message Reactions */}
+                                        <MessageReactions
+                                            messageId={message.id}
+                                            reactions={message.reactions || []}
+                                            onReactionSelect={handleAddReaction}
+                                            onReactionRemove={handleRemoveReaction}
+                                            className={`${isMine ? 'mr-2' : 'ml-2'}`}
+                                        />
+                                        
+                                        {/* Thread Indicator */}
+                                        <div className={`mt-1 ${isMine ? 'self-end mr-2' : 'self-start ml-2'}`}>
+                                            <ThreadIndicator
+                                                messageId={message.id}
+                                                replyCount={message.replyCount || 0}
+                                                onClick={() => handleOpenThread(message)}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             );
                         })}
@@ -294,6 +342,15 @@ export function MessageView() {
                     </div>
                 )}
             </ScrollArea>
+            
+            {/* Thread Dialog */}
+            {activeThreadMessage && (
+                <ThreadDialog
+                    isOpen={threadDialogOpen}
+                    onOpenChange={setThreadDialogOpen}
+                    parentMessage={activeThreadMessage}
+                />
+            )}
         </div>
     );
 }

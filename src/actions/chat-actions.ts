@@ -7,6 +7,24 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 
+// Define the Message type for use in components
+export type MessageWithSender = {
+    id: string;
+    body: string | null;
+    image: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    senderId: string;
+    conversationId: string;
+    parentId: string | null;
+    isThreadReply: boolean;
+    sender: {
+        id: string;
+        name: string | null;
+        image: string | null;
+    };
+};
+
 // Validation schema for the message input
 const MessageSchema = z.object({
     content: z.string().min(1, "Message cannot be empty"),
@@ -65,6 +83,8 @@ export async function sendMessage(content: string, conversationId: string) {
                 body: content,
                 senderId: userId,
                 conversationId,
+                isThreadReply: false, // Not a thread reply by default
+                parentId: null, // No parent message by default
             },
             include: {
                 sender: {
@@ -128,31 +148,22 @@ export async function sendMessage(content: string, conversationId: string) {
     }
 }
 
-// Define the Message type in a separate file or create it here at runtime
-// to avoid exporting non-function values from a "use server" file
-export type MessageWithSender = {
-    id: string;
-    body: string | null;
-    image: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    senderId: string;
-    conversationId: string;
-    sender: {
-        id: string;
-        name: string | null;
-        image: string | null;
-    };
-};
-
 /**
  * Server action for fetching messages for a conversation
- *
+ * 
  * @param conversationId The conversation ID
  * @returns Success/error status and an array of messages
  */
 export async function getMessages(conversationId: string) {
     try {
+        // Validate that we have a conversation ID
+        if (!conversationId) {
+            return {
+                success: false,
+                error: "Conversation ID is required",
+            };
+        }
+
         // Get the current user session
         const session = await getServerSession(authOptions);
         if (!session?.user?.id) {
@@ -181,10 +192,14 @@ export async function getMessages(conversationId: string) {
             };
         }
 
-        // Fetch messages for the conversation
+        // Get all messages for the conversation, excluding thread replies
         const messages = await prisma.message.findMany({
             where: {
                 conversationId,
+                OR: [
+                    { isThreadReply: false },
+                    { isThreadReply: null }
+                ]
             },
             include: {
                 sender: {
@@ -194,15 +209,60 @@ export async function getMessages(conversationId: string) {
                         image: true,
                     },
                 },
+                seenBy: {
+                    select: {
+                        id: true,
+                    },
+                },
             },
             orderBy: {
                 createdAt: 'asc',
             },
         });
 
+        // Get reply counts for each message
+        const messagesWithReplyCount = await Promise.all(
+            messages.map(async (message) => {
+                const replyCount = await prisma.message.count({
+                    where: {
+                        parentId: message.id,
+                    },
+                });
+                return {
+                    ...message,
+                    replyCount,
+                };
+            })
+        );
+
+        // Mark all messages as seen by the current user
+        for (const message of messages) {
+            await prisma.message.update({
+                where: { id: message.id },
+                data: {
+                    seenBy: {
+                        connect: { id: userId }
+                    }
+                }
+            });
+        }
+
+        // Mark the conversation as read for the current user
+        await prisma.conversationParticipant.update({
+            where: {
+                userId_conversationId: {
+                    userId,
+                    conversationId,
+                },
+            },
+            data: {
+                hasUnreadMessages: false,
+            },
+        });
+
         return {
             success: true,
-            messages,
+            messages: messagesWithReplyCount,
         };
     } catch (error) {
         console.error("Error fetching messages:", error);

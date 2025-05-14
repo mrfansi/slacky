@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 type Provider = Awaited<ReturnType<typeof getProviders>>;
 
@@ -116,6 +117,12 @@ export default function SignInPage() {
                     )}
                 </CardContent>
                 <CardFooter className="flex flex-col space-y-2 pt-0">
+                    <div className="text-sm text-center">
+                        Don't have an account?{' '}
+                        <Link href="/auth/signup" className="text-primary hover:underline">
+                            Sign Up
+                        </Link>
+                    </div>
                     <div className="text-sm text-center text-gray-500">
                         By signing in, you agree to our terms of service and privacy policy.
                     </div>

@@ -103,6 +103,7 @@ model Message {
   image          String?      // For image messages
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  isThreadReply  Boolean      @default(false)  // Whether this message is a thread reply
   
   // Relations
   senderId       String
@@ -111,6 +112,11 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   seenBy         User[]       @relation("MessageSeenBy")
   reactions      Reaction[]   // One-to-many relation with reactions
+  
+  // Thread relations
+  parentId       String?      // ID of the parent message if this is a thread reply
+  parent         Message?     @relation("ThreadReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies        Message[]    @relation("ThreadReplies")
 }
 
 // Reaction model for message reactions
